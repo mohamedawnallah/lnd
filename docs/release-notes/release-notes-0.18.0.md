@@ -321,6 +321,12 @@ bitcoin peers' feefilter values into account](https://github.com/lightningnetwor
   add coin selection strategy option to the following on-chain RPC calls
   `EstimateFee`, `SendMany`, `SendCoins`, `BatchOpenChannel`, `SendOutputs`, and `FundPsbt`.
 
+* [Delete All Payments RPC](https://github.com/lightningnetwork/lnd/pull/8671)
+  adds `all_payments` option to the `DeleteAllPayments` RPC. This update
+  ensures that the arguments are provided when calling `DeleteAllPayments` RPC,
+  whether through gRPC or the REST API, due to the destructive nature of the
+  operation.
+
 ## lncli Updates
 
 * [Documented all available `lncli`
