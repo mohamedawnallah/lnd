@@ -266,8 +266,23 @@ func (m *MissionControl) init() error {
 		m.applyPaymentResult(result)
 	}
 
+	mcSnapshots, err := m.store.fetchMCData()
+	if err != nil {
+		return err
+	}
+
+	mcPairsPersisted := 0
+	for _, mcSnapshot := range mcSnapshots {
+		err := m.ImportHistory(mcSnapshot, false)
+		if err != nil {
+			return err
+		}
+		mcPairsPersisted += len(mcSnapshot.Pairs)
+	}
+
 	log.Debugf("Mission control state reconstruction finished: "+
-		"n=%v, time=%v", len(results), time.Since(start))
+		"raw_payment_results_count=%v, persisted_mc_pairs_count=%v, "+
+		"time=%v", len(results), mcPairsPersisted, time.Since(start))
 
 	return nil
 }
@@ -323,6 +338,11 @@ func (m *MissionControl) ResetHistory() error {
 
 	m.state.resetHistory()
 
+	err := m.store.resetMCData()
+	if err != nil {
+		return err
+	}
+
 	log.Debugf("Mission control history cleared")
 
 	return nil
@@ -377,6 +397,11 @@ func (m *MissionControl) ImportHistory(history *MissionControlSnapshot,
 		len(history.Pairs))
 
 	imported := m.state.importSnapshot(history, force)
+
+	err := m.store.persistMCData(history)
+	if err != nil {
+		return err
+	}
 
 	log.Infof("Imported %v results to mission control", imported)
 
