@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -292,4 +293,141 @@ func BenchmarkMissionControlStoreFlushing(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestPersistMCData verifies that the persistMCData function correctly
+// stores a given MissionControlSnapshot into the database and retrieves it
+// accurately using fetchMCData.
+//
+// It performs the following steps:
+// 1. Creates a test harness for the mission control store.
+// 2. Prepares a sample MissionControlSnapshot with timed pair results.
+// 3. Persists the snapshot using persistMCData.
+// 4. Fetches the stored data using fetchMCData.
+// 5. Verifies that the fetched data matches the original snapshot.
+func TestPersistMCData(t *testing.T) {
+	h := newMCStoreTestHarness(t, testMaxRecords, time.Second)
+	store := h.store
+
+	// Prepare a sample mission control snapshot.
+	snapshot := &MissionControlSnapshot{
+		Pairs: []MissionControlPairSnapshot{
+			{
+				Pair: DirectedNodePair{
+					From: route.Vertex{1},
+					To:   route.Vertex{2},
+				},
+				TimedPairResult: TimedPairResult{
+					SuccessTime: time.Now().Add(-time.Hour),
+					SuccessAmt:  lnwire.MilliSatoshi(1500),
+				},
+			},
+			{
+				Pair: DirectedNodePair{
+					From: route.Vertex{3},
+					To:   route.Vertex{4},
+				},
+				TimedPairResult: TimedPairResult{
+					FailTime: time.Now().Add(-time.Hour),
+					FailAmt:  lnwire.MilliSatoshi(3000),
+				},
+			},
+		},
+	}
+
+	// Persist the mission control snapshot.
+	err := store.persistMCData(snapshot)
+	require.NoError(t, err)
+
+	// Fetch the data to verify.
+	mcSnapshots, err := store.fetchMCData()
+	require.NoError(t, err)
+	require.Len(t, mcSnapshots, 1)
+	require.Len(t, mcSnapshots[0].Pairs, 2)
+	require.Equal(t, snapshot.Pairs[0].Pair, mcSnapshots[0].Pairs[0].Pair)
+	require.Equal(t, snapshot.Pairs[1].Pair, mcSnapshots[0].Pairs[1].Pair)
+	require.Equal(
+		t, snapshot.Pairs[0].TimedPairResult,
+		mcSnapshots[0].Pairs[0].TimedPairResult,
+	)
+	require.Equal(
+		t, snapshot.Pairs[1].TimedPairResult,
+		mcSnapshots[0].Pairs[1].TimedPairResult,
+	)
+}
+
+// TestResetMCData verifies that the resetMCData function correctly
+// clears all mission control data from the database.
+//
+// It performs the following steps:
+// 1. Creates a test harness for the mission control store.
+// 2. Prepares and persists a sample MissionControlSnapshot.
+// 3. Calls resetMCData to clear the mission control data.
+// 4. Fetches the data using fetchMCData to verify that it has been reset.
+func TestResetMCData(t *testing.T) {
+	h := newMCStoreTestHarness(t, testMaxRecords, time.Second)
+	store := h.store
+
+	// Prepare a sample mission control snapshot.
+	snapshot := &MissionControlSnapshot{
+		Pairs: []MissionControlPairSnapshot{
+			{
+				Pair: DirectedNodePair{
+					From: route.Vertex{1},
+					To:   route.Vertex{2},
+				},
+				TimedPairResult: TimedPairResult{
+					SuccessTime: time.Now().Add(-time.Hour),
+					SuccessAmt:  lnwire.MilliSatoshi(2000),
+				},
+			},
+		},
+	}
+
+	// Persist the mission control snapshot.
+	err := store.persistMCData(snapshot)
+	require.NoError(t, err)
+
+	// Reset the mission control data.
+	err = store.resetMCData()
+	require.NoError(t, err)
+
+	// Fetch the data to verify it has been reset.
+	mcSnapshots, err := store.fetchMCData()
+	require.NoError(t, err)
+	require.Len(t, mcSnapshots, 0)
+}
+
+// TestDeserializeMCData verifies that the deserializeMCData function correctly
+// deserializes key and value bytes into a MissionControlPairSnapshot.
+//
+// It performs the following steps:
+//  1. Prepares sample data for serialization, including 'From' and 'To' public
+//     keys and a TimedPairResult.
+//  2. Serializes the TimedPairResult into JSON format.
+//  3. Concatenates the 'From' and 'To' public keys to form the key.
+//  4. Deserializes the mission control data using deserializeMCData.
+//  5. Verifies that the deserialized data matches the original data.
+func TestDeserializeMCData(t *testing.T) {
+	// Prepare sample data for serialization.
+	from := route.Vertex{1}
+	to := route.Vertex{2}
+	timedPairResult := TimedPairResult{
+		FailTime:    time.Now(),
+		FailAmt:     lnwire.MilliSatoshi(1000),
+		SuccessTime: time.Now().Add(-time.Hour),
+		SuccessAmt:  lnwire.MilliSatoshi(2000),
+	}
+	data, err := json.Marshal(timedPairResult)
+	require.NoError(t, err)
+
+	// Concatenate the 'From' and 'To' public keys to form the key.
+	key := append(from[:], to[:]...)
+
+	// Deserialize the mission control data.
+	mcSnapshot, err := deserializeMCData(key, data)
+	require.NoError(t, err)
+	require.Equal(t, from, mcSnapshot.Pair.From)
+	require.Equal(t, to, mcSnapshot.Pair.To)
+	require.Equal(t, timedPairResult, mcSnapshot.TimedPairResult)
 }
