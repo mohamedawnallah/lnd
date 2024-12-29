@@ -799,7 +799,11 @@ func Main(cfg *Config, lisCfg ListenerCfg, implCfg *ImplementationCfg,
 
 	// Wait for shutdown signal from either a graceful server stop or from
 	// the interrupt handler.
-	<-interceptor.ShutdownChannel()
+	normalShutdown := <-interceptor.ShutdownChannel()
+	if !normalShutdown {
+		return errors.New("LND shut down with an error")
+	}
+
 	return nil
 }
 
