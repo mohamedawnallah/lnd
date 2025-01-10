@@ -1,8 +1,6 @@
 package sweep
 
 import (
-	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -509,19 +507,15 @@ func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
 
 		switch {
 		case err == nil:
-			// The tx is valid, store it.
-			var txBuf bytes.Buffer
-			err := sweepCtx.tx.Serialize(&txBuf)
-			if err != nil {
-				return err
-			}
-			txHex := hex.EncodeToString(txBuf.Bytes())
-			fmt.Printf("Tx Hex in createRBFCompliantTx: %s", txHex)
-
 			t.storeRecord(
 				requestID, sweepCtx.tx, req, f, sweepCtx.fee,
 				sweepCtx.outpointToTxIndex,
 			)
+
+			// TODO: Notify the Tx Result.
+			t.notifyResult(&BumpResult{
+				Tx: sweepCtx.tx,
+			})
 
 			log.Infof("Created initial sweep tx=%v for %v inputs: "+
 				"feerate=%v, fee=%v, inputs:\n%v",
