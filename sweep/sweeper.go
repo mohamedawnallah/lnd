@@ -1,6 +1,8 @@
 package sweep
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -1463,6 +1465,14 @@ func (s *UtxoSweeper) markInputsSwept(tx *wire.MsgTx, isOurTx bool) {
 				"party in tx=%v", outpoint, tx.TxHash())
 			err = ErrRemoteSpend
 		}
+
+		var txBuf bytes.Buffer
+		err = tx.Serialize(&txBuf)
+		if err != nil {
+			log.Critical(err)
+		}
+		txHex := hex.EncodeToString(txBuf.Bytes())
+		fmt.Printf("Tx Hex: %s", txHex)
 
 		// Signal result channels.
 		s.signalResult(input, Result{
