@@ -514,8 +514,11 @@ func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
 
 			// TODO: Notify the Tx Result.
 			t.notifyResult(&BumpResult{
-				Event: TxPublished,
-				Tx:    sweepCtx.tx,
+				Event:     TxPublished,
+				Tx:        sweepCtx.tx,
+				FeeRate:   f.FeeRate(),
+				Fee:       sweepCtx.fee,
+				requestID: requestID,
 			})
 
 			log.Infof("Created initial sweep tx=%v for %v inputs: "+
