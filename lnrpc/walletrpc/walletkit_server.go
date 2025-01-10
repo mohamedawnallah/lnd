@@ -1140,31 +1140,31 @@ func (w *WalletKit) BumpFee(ctx context.Context,
 	}
 
 	// Otherwise, create a new sweeping request for this input.
-	_, err = w.sweepNewInput(op, uint32(currentHeight), params)
+	sweepChan, err := w.sweepNewInput(op, uint32(currentHeight), params)
 	if err != nil {
 		return nil, err
 	}
 
-	// var sweepTxHex string
-	// if in.IncludeRawTx {
-	// 	select {
-	// 	case sweepResult := <-sweepChan:
-	// 		sweepTxHex, err = lnrpc.SerializeAndHexEncodeTx(
-	// 			sweepResult.Tx,
-	// 		)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
+	var sweepTxHex string
+	if in.IncludeRawTx {
+		select {
+		case sweepResult := <-sweepChan:
+			sweepTxHex, err = lnrpc.SerializeAndHexEncodeTx(
+				sweepResult.Tx,
+			)
+			if err != nil {
+				return nil, err
+			}
 
-	// 	case <-ctx.Done():
-	// 		return nil, ctx.Err()
-	// 	}
-	// }
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 
 	status := "Successfully registered CPFP-tx with the sweeper"
 	return &BumpFeeResponse{
 		Status:     status,
-		SweepTxHex: "",
+		SweepTxHex: sweepTxHex,
 	}, nil
 }
 
