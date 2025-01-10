@@ -407,6 +407,9 @@
 * The [`estimateroutefee`](https://github.com/lightningnetwork/lnd/pull/8136)
   subcommand now gives access to graph based and payment probe fee estimation.
 
+* `bumpfee` now optionally returns the
+  [raw hex of the sweep tx](https://github.com/lightningnetwork/lnd/pull/8528).
+
 ## Code Health
 
 * [Remove Litecoin code](https://github.com/lightningnetwork/lnd/pull/7867).
