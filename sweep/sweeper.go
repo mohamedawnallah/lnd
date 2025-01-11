@@ -854,6 +854,7 @@ func (s *UtxoSweeper) sweep(set InputSet) error {
 	// Broadcast will return a read-only chan that we will listen to for
 	// this publish result and future RBF attempt.
 	sweepTx, resp := s.cfg.Publisher.Broadcast(req)
+	fmt.Printf("Sweep Tx: %v", sweepTx)
 	for _, txIn := range sweepTx.TxIn {
 		outpoint := txIn.PreviousOutPoint
 		input, ok := s.inputs[outpoint]
