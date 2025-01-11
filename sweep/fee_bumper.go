@@ -66,7 +66,7 @@ type Bumper interface {
 	// and monitors its confirmation status for potential fee bumping. It
 	// returns a chan that the caller can use to receive updates about the
 	// broadcast result and potential RBF attempts.
-	Broadcast(req *BumpRequest) <-chan *BumpResult
+	Broadcast(req *BumpRequest) (sweepTx *wire.MsgTx, _ <-chan *BumpResult)
 }
 
 // BumpEvent represents the event of a fee bumping attempt.
@@ -405,7 +405,7 @@ func (t *TxPublisher) isNeutrinoBackend() bool {
 // RBF-compliant unless the budget specified cannot cover the fee.
 //
 // NOTE: part of the Bumper interface.
-func (t *TxPublisher) Broadcast(req *BumpRequest) <-chan *BumpResult {
+func (t *TxPublisher) Broadcast(req *BumpRequest) (*wire.MsgTx, <-chan *BumpResult) {
 	log.Tracef("Received broadcast request: %s",
 		lnutils.SpewLogClosure(req))
 
@@ -417,11 +417,12 @@ func (t *TxPublisher) Broadcast(req *BumpRequest) <-chan *BumpResult {
 	t.subscriberChans.Store(requestID, subscriber)
 
 	// Publish the tx immediately if specified.
+	var sweepTx *wire.MsgTx
 	if req.Immediate {
-		t.handleInitialBroadcast(record, requestID)
+		sweepTx = t.handleInitialBroadcast(record, requestID)
 	}
 
-	return subscriber
+	return sweepTx, subscriber
 }
 
 // storeInitialRecord initializes a monitor record and saves it in the map.
@@ -447,21 +448,21 @@ func (t *TxPublisher) Name() string {
 
 // initializeTx initializes a fee function and creates an RBF-compliant tx. If
 // succeeded, the initial tx is stored in the records map.
-func (t *TxPublisher) initializeTx(requestID uint64, req *BumpRequest) error {
+func (t *TxPublisher) initializeTx(requestID uint64, req *BumpRequest) (*wire.MsgTx, error) {
 	// Create a fee bumping algorithm to be used for future RBF.
 	feeAlgo, err := t.initializeFeeFunction(req)
 	if err != nil {
-		return fmt.Errorf("init fee function: %w", err)
+		return nil, fmt.Errorf("init fee function: %w", err)
 	}
 
 	// Create the initial tx to be broadcasted. This tx is guaranteed to
 	// comply with the RBF restrictions.
-	err = t.createRBFCompliantTx(requestID, req, feeAlgo)
+	sweepTx, err := t.createRBFCompliantTx(requestID, req, feeAlgo)
 	if err != nil {
-		return fmt.Errorf("create RBF-compliant tx: %w", err)
+		return nil, fmt.Errorf("create RBF-compliant tx: %w", err)
 	}
 
-	return nil
+	return sweepTx, nil
 }
 
 // initializeFeeFunction initializes a fee function to be used for this request
@@ -498,7 +499,7 @@ func (t *TxPublisher) initializeFeeFunction(
 // and redo the process until the tx is valid, or return an error when non-RBF
 // related errors occur or the budget has been used up.
 func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
-	f FeeFunction) error {
+	f FeeFunction) (*wire.MsgTx, error) {
 
 	for {
 		// Create a new tx with the given fee rate and check its
@@ -527,7 +528,7 @@ func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
 				f.FeeRate(), sweepCtx.fee,
 				inputTypeSummary(req.Inputs))
 
-			return nil
+			return sweepCtx.tx, nil
 
 		// If the error indicates the fees paid is not enough, we will
 		// ask the fee function to increase the fee rate and retry.
@@ -558,7 +559,7 @@ func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
 				// cluster these inputs differetly.
 				increased, err = f.Increment()
 				if err != nil {
-					return err
+					return nil, err
 				}
 			}
 
@@ -568,7 +569,7 @@ func (t *TxPublisher) createRBFCompliantTx(requestID uint64, req *BumpRequest,
 		// mempool acceptance.
 		default:
 			log.Debugf("Failed to create RBF-compliant tx: %v", err)
-			return err
+			return nil, err
 		}
 	}
 }
@@ -1030,7 +1031,7 @@ func (t *TxPublisher) handleInitialTxError(requestID uint64, err error) {
 // 2. create an RBF-compliant tx and monitor it for confirmation.
 // 3. notify the initial broadcast result back to the caller.
 func (t *TxPublisher) handleInitialBroadcast(r *monitorRecord,
-	requestID uint64) {
+	requestID uint64) *wire.MsgTx {
 
 	log.Debugf("Initial broadcast for requestID=%v", requestID)
 
@@ -1043,14 +1044,14 @@ func (t *TxPublisher) handleInitialBroadcast(r *monitorRecord,
 	// RBF rules.
 	//
 	// Create the initial tx to be broadcasted.
-	err = t.initializeTx(requestID, r.req)
+	sweepTx, err := t.initializeTx(requestID, r.req)
 	if err != nil {
 		log.Errorf("Initial broadcast failed: %v", err)
 
 		// We now handle the initialization error and exit.
 		t.handleInitialTxError(requestID, err)
 
-		return
+		return nil
 	}
 
 	// Successfully created the first tx, now broadcast it.
@@ -1068,6 +1069,8 @@ func (t *TxPublisher) handleInitialBroadcast(r *monitorRecord,
 	}
 
 	t.handleResult(result)
+
+	return sweepTx
 }
 
 // handleFeeBumpTx checks if the tx needs to be bumped, and if so, it will
