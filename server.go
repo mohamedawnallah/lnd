@@ -347,8 +347,6 @@ type server struct {
 	// provide insights into their health and performance.
 	chanEventStore *chanfitness.ChannelEventStore
 
-	hostAnn *netann.HostAnnouncer
-
 	// livenessMonitor monitors that lnd has access to critical resources.
 	livenessMonitor *healthcheck.Monitor
 
@@ -1805,33 +1803,6 @@ func newServer(cfg *Config, listenAddrs []net.Addr,
 		}
 	}
 
-	if len(cfg.ExternalHosts) != 0 {
-		advertisedIPs := make(map[string]struct{})
-		for _, addr := range s.currentNodeAnn.Addresses {
-			advertisedIPs[addr.String()] = struct{}{}
-		}
-
-		s.hostAnn = netann.NewHostAnnouncer(netann.HostAnnouncerConfig{
-			Hosts:         cfg.ExternalHosts,
-			RefreshTicker: ticker.New(defaultHostSampleInterval),
-			LookupHost: func(host string) (net.Addr, error) {
-				return lncfg.ParseAddressString(
-					host, strconv.Itoa(defaultPeerPort),
-					cfg.net.ResolveTCPAddr,
-				)
-			},
-			AdvertisedIPs: advertisedIPs,
-			AnnounceNewIPs: netann.IPAnnouncer(
-				func(modifier ...netann.NodeAnnModifier) (
-					lnwire.NodeAnnouncement, error) {
-
-					return s.genNodeAnnouncement(
-						nil, modifier...,
-					)
-				}),
-		})
-	}
-
 	// Create liveness monitor.
 	s.createLivenessMonitor(cfg, cc, leaderElector)
 
@@ -2176,14 +2147,6 @@ func (s *server) Start() error {
 		if err := s.customMessageServer.Start(); err != nil {
 			startErr = err
 			return
-		}
-
-		if s.hostAnn != nil {
-			cleanup = cleanup.add(s.hostAnn.Stop)
-			if err := s.hostAnn.Start(); err != nil {
-				startErr = err
-				return
-			}
 		}
 
 		if s.livenessMonitor != nil {
@@ -2693,13 +2656,6 @@ func (s *server) Stop() error {
 			if err := s.towerClientMgr.Stop(); err != nil {
 				srvrLog.Warnf("Unable to shut down tower "+
 					"client manager: %v", err)
-			}
-		}
-
-		if s.hostAnn != nil {
-			if err := s.hostAnn.Stop(); err != nil {
-				srvrLog.Warnf("unable to shut down host "+
-					"annoucner: %v", err)
 			}
 		}
 
